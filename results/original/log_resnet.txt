@@ -1,0 +1,38 @@
+Epoch 1: Training Loss : 1.0303359186539434 | Validation loss : 1.8761910200119019
+Epoch 2: Training Loss : 0.7641524060792425 | Validation loss : 2.2747952938079834
+Epoch 3: Training Loss : 0.7275022152911766 | Validation loss : 0.8369446396827698
+Epoch 4: Training Loss : 0.6728421849738864 | Validation loss : 0.6998011469841003
+Epoch 5: Training Loss : 0.6066674294427785 | Validation loss : 0.6939786672592163
+Epoch 6: Training Loss : 0.5173597474601254 | Validation loss : 0.7560324668884277
+Epoch 7: Training Loss : 0.37230236133889316 | Validation loss : 0.9123993515968323
+Epoch 8: Training Loss : 0.2566266010578031 | Validation loss : 1.1611751317977905
+Training Complete --> Exiting
+test loss is 0.6792267560958862
+training accuracy: 78.79822465005121
+validing accuracy: 74.86338797814207
+testing accuracy: 78.79822465005121
+Epoch 1: Training Loss : 0.9994614984078308 | Validation loss : 1.9485607147216797
+Epoch 2: Training Loss : 0.7573668221517323 | Validation loss : 2.1912004947662354
+Epoch 3: Training Loss : 0.6884212973134922 | Validation loss : 0.9642835259437561
+Epoch 4: Training Loss : 0.6352684687697142 | Validation loss : 0.7562146782875061
+Epoch 5: Training Loss : 0.5796457133874343 | Validation loss : 0.8121782541275024
+Epoch 6: Training Loss : 0.46832982042455235 | Validation loss : 0.7691677212715149
+Epoch 7: Training Loss : 0.3596481542491229 | Validation loss : 1.0541177988052368
+Training Complete --> Exiting
+test loss is 0.6791748404502869
+training accuracy: 76.85216797541823
+validing accuracy: 73.77049180327869
+testing accuracy: 76.85216797541823
+Epoch 1: Training Loss : 0.9961941365334473 | Validation loss : 1.977089762687683
+Epoch 2: Training Loss : 0.7528941632538129 | Validation loss : 2.464092969894409
+Epoch 3: Training Loss : 0.7215881250587572 | Validation loss : 1.2584805488586426
+Epoch 4: Training Loss : 0.6914952464704426 | Validation loss : 0.8436257839202881
+Epoch 5: Training Loss : 0.6297296667799033 | Validation loss : 0.7322297692298889
+Epoch 6: Training Loss : 0.5224630761854719 | Validation loss : 0.796897828578949
+Epoch 7: Training Loss : 0.3954527473421217 | Validation loss : 0.9520315527915955
+Epoch 8: Training Loss : 0.3036250941437558 | Validation loss : 1.569040060043335
+Training Complete --> Exiting
+test loss is 0.7117854952812195
+training accuracy: 77.87640833048822
+validing accuracy: 73.49726775956285
+testing accuracy: 77.87640833048822
