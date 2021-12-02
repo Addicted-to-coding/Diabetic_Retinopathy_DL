@@ -12,6 +12,7 @@ from os import path
 import torchvision.models as models
 import argparse
 import sys
+from evaluation import *
 
 
 parser = argparse.ArgumentParser()
