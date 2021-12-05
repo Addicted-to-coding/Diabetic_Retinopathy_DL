@@ -5,7 +5,13 @@ import torch
 import numpy as np
 import pandas as pd
 from scipy.special import softmax
+import logging
 
+log_file = 'class_report.txt'
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
+logger.addHandler(logging.FileHandler(log_file, 'a'))
+print = logger.info
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

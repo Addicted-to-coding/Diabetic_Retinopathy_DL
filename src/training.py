@@ -13,7 +13,7 @@ import torchvision.models as models
 import argparse
 import sys
 from evaluation import *
-
+from simclr import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='resnet18')
@@ -21,17 +21,19 @@ parser.add_argument('--epochs', type=int, default=10)
 parser.add_argument('--patience', type=int, default=3)
 parser.add_argument('--run', type=int, default=1)
 parser.add_argument('--bsz', type=int, default=128)
+parser.add_argument('--hidden', type=int, default=128)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--train', type=bool, default=False)
+parser.add_argument('--pretrained', type=bool, default=False)
 parser.add_argument('--cutmix', type=bool, default=False)
 parser.add_argument('--mixup', type=bool, default=False)
-
+parser.add_argument('--simclr', type=bool, default=False)
 
 args = parser.parse_args()
 
 log_file = f'log_{args.model}.txt'
-model_file = f'{args.model}_{args.run}.pt'
-
+model_file = f'{args.model}_{args.run}_{args.simclr}.pt'
+pretrained_model_file = f'{args.model}_simclr.pt'
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 logger.addHandler(logging.FileHandler(log_file, 'a'))
@@ -47,8 +49,9 @@ class generate_model(torch.nn.Module):
         super(generate_model, self).__init__()
 
         # create a dummy input
-        dummy_input = torch.rand(1, 3, 320, 320)
-        out = base_model(dummy_input.to(device).float())
+        dummy_input = torch.rand(1, 3, 160, 160)
+        dummy_input = dummy_input.to(device).float()
+        out = base_model(dummy_input) 
         input_size = out.shape[1]
 
         self.base_model = base_model
@@ -59,7 +62,7 @@ class generate_model(torch.nn.Module):
                                 )
 
     def forward(self, x):
-        x = self.base_model(x)
+        x =  self.base_model(x)
         pred = self.fc(x)
         return pred
 
@@ -103,7 +106,6 @@ def evaluate(model, objective, loader):
         for batch_idx, data_batch in enumerate(loader):
 
             X, y = data_batch[0].to(device).float(), data_batch[1].to(device)
-            # X, y = map(lambda t: t.to(device).float(), (X, y))
 
             prediction = model(X)
             total_loss += objective(prediction, y) * X.shape[0]
@@ -129,7 +131,6 @@ def train(model, objective, optimizer, train_loader, valid_loader, epochs = 1, s
             optimizer.zero_grad()
 
             train_X, train_y = data_batch[0].to(device).float(), data_batch[1].to(device)
-            # train_X, train_y = map(lambda t: t.to(device).float(), (train_X, train_y))
 
             prediction = model(train_X)
             loss = objective(prediction, train_y)
@@ -154,6 +155,7 @@ def train(model, objective, optimizer, train_loader, valid_loader, epochs = 1, s
         else:
             pat = pat - 1
             if pat == 0:
+
                 print('Training Complete --> Exiting')
                 break
 
@@ -173,18 +175,21 @@ test_dataset = DataGenerator(test_X, test_y)
 test_loader = data.DataLoader(test_dataset, batch_size = bsz, shuffle = False)
 
 if 'resnet' in args.model: 
-    basemodel = models.resnet18().to(device)
+    basemodel = models.resnet18(pretrained = args.pretrained).to(device)
 elif 'alexnet' in args.model:
-    basemodel = models.alexnet().to(device)
+    basemodel = models.alexnet(pretrained = args.pretrained).to(device)
 elif 'vgg' in args.model:
-    basemodel = models.vgg16().to(device)
+    basemodel = models.vgg16(pretrained = args.pretrained).to(device)
 elif 'densenet' in args.model:
-    basemodel = models.densenet161().to(device)
+    basemodel = models.densenet161(pretrained = args.pretrained).to(device)
 else:
     print(f'{args.model} not found! Exiting!')
     sys.exit()
 
-model = generate_model(base_model = basemodel).to(device)
+if args.simclr:
+    model = SimCLR(basemodel, hidden = args.hidden).to(device)
+else:
+    model = generate_model(base_model = basemodel).to(device)
 
 lr = args.lr
 
@@ -195,17 +200,20 @@ optimizer = torch.optim.Adam(
 criterion = xent()
 
 if args.train:
+    if args.simclr:
+        train_simclr(model, optimizer, train_loader, valid_loader, pretrained_model_file, epochs = args.epochs)
+        model.load_state_dict(torch.load(pretrained_model_file))
+        model = generate_model(base_model = model).to(device)
+        optimizer = torch.optim.Adam(
+                        model.parameters(),
+                        lr=lr)
     train(model, criterion, optimizer, train_loader, valid_loader, epochs = args.epochs)
 
 model.load_state_dict(torch.load(model_file))
 loss_ = evaluate(model, criterion, test_loader)
 print(f'test loss is {loss_.item()}')
 
-# train_accuracy = accuracy(model, train_loader)
-# print(f'training accuracy: {train_accuracy}')
-
-# valid_accuracy = accuracy(model, valid_loader)
-# print(f'validing accuracy: {valid_accuracy}')
-
 test_accuracy = accuracy(model, test_loader)
 print(f'testing accuracy: {test_accuracy}')
+
+test_evaluate(model, criterion, test_loader)
