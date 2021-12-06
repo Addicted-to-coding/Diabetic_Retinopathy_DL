@@ -1,6 +1,6 @@
 from torch.utils.data import Dataset
+from datagenerator import *
 import pandas as pd
-from PIL import Image
 import numpy as np
 import pickle
 from torch.utils import data
@@ -12,7 +12,8 @@ from os import path
 import torchvision.models as models
 import argparse
 import sys
-
+from evaluation import *
+from simclr import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='resnet18')
@@ -20,15 +21,19 @@ parser.add_argument('--epochs', type=int, default=10)
 parser.add_argument('--patience', type=int, default=3)
 parser.add_argument('--run', type=int, default=1)
 parser.add_argument('--bsz', type=int, default=128)
+parser.add_argument('--hidden', type=int, default=128)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--train', type=bool, default=False)
-
+parser.add_argument('--pretrained', type=bool, default=False)
+parser.add_argument('--cutmix', type=bool, default=False)
+parser.add_argument('--mixup', type=bool, default=False)
+parser.add_argument('--simclr', type=bool, default=False)
 
 args = parser.parse_args()
 
 log_file = f'log_{args.model}.txt'
-model_file = f'{args.model}_{args.run}.pt'
-
+model_file = f'{args.model}_{args.run}_{args.simclr}.pt'
+pretrained_model_file = f'{args.model}_simclr.pt'
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 logger.addHandler(logging.FileHandler(log_file, 'a'))
@@ -38,27 +43,15 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 random.seed(args.run)
 
-class DataGenerator(Dataset):
-    def __init__(self, X, y):
-        super(DataGenerator, self).__init__()
-        self.X = np.transpose(X, (0, 3, 1, 2))
-        self.y = y
-        self.length = len(X)
-
-    def __getitem__(self, index):
-        return self.X[index], self.y[index]
-
-    def __len__(self):
-        return self.length
-
 class generate_model(torch.nn.Module):
 
     def __init__(self, base_model, hidden = 128, num_outs = 5):
         super(generate_model, self).__init__()
 
         # create a dummy input
-        dummy_input = torch.rand(1, 3, 320, 320)
-        out = base_model(dummy_input.to(device).float())
+        dummy_input = torch.rand(1, 3, 160, 160)
+        dummy_input = dummy_input.to(device).float()
+        out = base_model(dummy_input) 
         input_size = out.shape[1]
 
         self.base_model = base_model
@@ -69,35 +62,21 @@ class generate_model(torch.nn.Module):
                                 )
 
     def forward(self, x):
-        x = self.base_model(x)
+        x =  self.base_model(x)
         pred = self.fc(x)
         return pred
 
-def get_image_label(data, dir, indices):
-
-    X = np.array([np.asarray(Image.open(f'{dir}{data.iloc[i].id_code}.png')) for i in indices])
-    y = np.array([int(data.iloc[i].diagnosis) for i in indices])
-
-    return X,y
-
-def get_dataset(path, dir, train_size = 0.8, valid_size = 0.1):
-
-    data = pd.read_csv(path)
-    arr = [i for i in range(len(data))]
-    random.shuffle(arr)
-    train_indices = arr[: int(train_size * len(data)) ]
-    train_X, train_y = get_image_label(data, dir, train_indices)
-    train_X = train_X / 255.0
-
-    valid_indices = arr[int(train_size * len(data)) : int((train_size + valid_size) * len(data))]
-    valid_X, valid_y = get_image_label(data, dir, valid_indices)
-    valid_X = valid_X / 255.0
-
-    test_indices = arr[int((train_size + valid_size) * len(data)) : ]
-    test_X, test_y = get_image_label(data, dir, test_indices)
-    test_X = test_X / 255.0
-
-    return train_X, train_y, valid_X, valid_y, test_X, test_y
+def xent():
+    def loss(pred, y):
+        if len(y.shape) == 1:
+            lss = torch.nn.CrossEntropyLoss()
+            ll = lss(pred, y)
+        else:
+            sm = torch.nn.Softmax(dim = -1)
+            pred = sm(pred)
+            ll = - torch.mean(torch.sum(y * torch.log(pred), 1))
+        return ll
+    return loss
 
 def accuracy(model, loader):
 
@@ -127,7 +106,6 @@ def evaluate(model, objective, loader):
         for batch_idx, data_batch in enumerate(loader):
 
             X, y = data_batch[0].to(device).float(), data_batch[1].to(device)
-            # X, y = map(lambda t: t.to(device).float(), (X, y))
 
             prediction = model(X)
             total_loss += objective(prediction, y) * X.shape[0]
@@ -153,7 +131,6 @@ def train(model, objective, optimizer, train_loader, valid_loader, epochs = 1, s
             optimizer.zero_grad()
 
             train_X, train_y = data_batch[0].to(device).float(), data_batch[1].to(device)
-            # train_X, train_y = map(lambda t: t.to(device).float(), (train_X, train_y))
 
             prediction = model(train_X)
             loss = objective(prediction, train_y)
@@ -178,6 +155,7 @@ def train(model, objective, optimizer, train_loader, valid_loader, epochs = 1, s
         else:
             pat = pat - 1
             if pat == 0:
+
                 print('Training Complete --> Exiting')
                 break
 
@@ -187,29 +165,31 @@ train_X, train_y, valid_X, valid_y, test_X, test_y = get_dataset("/u/home/h/hban
 
 bsz = args.bsz
 
-train_dataset = DataGenerator(train_X, train_y)
+train_dataset = DataGenerator(train_X, train_y, args.mixup, args.cutmix)
 train_loader = data.DataLoader(train_dataset, batch_size= bsz, shuffle = True)
 
-valid_dataset = DataGenerator(valid_X, valid_y)
+valid_dataset = DataGenerator(valid_X, valid_y, args.mixup, args.cutmix)
 valid_loader = data.DataLoader(valid_dataset, batch_size = bsz, shuffle = True)
 
 test_dataset = DataGenerator(test_X, test_y)
 test_loader = data.DataLoader(test_dataset, batch_size = bsz, shuffle = False)
 
 if 'resnet' in args.model: 
-    basemodel = models.resnet18().to(device)
+    basemodel = models.resnet18(pretrained = args.pretrained).to(device)
 elif 'alexnet' in args.model:
-    basemodel = models.alexnet().to(device)
+    basemodel = models.alexnet(pretrained = args.pretrained).to(device)
 elif 'vgg' in args.model:
-    basemodel = models.vgg16().to(device)
+    basemodel = models.vgg16(pretrained = args.pretrained).to(device)
 elif 'densenet' in args.model:
-    basemodel = models.densenet161().to(device)
+    basemodel = models.densenet161(pretrained = args.pretrained).to(device)
 else:
     print(f'{args.model} not found! Exiting!')
     sys.exit()
 
-model = generate_model(base_model = basemodel).to(device)
-
+if args.simclr:
+    model = SimCLR(basemodel, hidden = args.hidden).to(device)
+else:
+    model = generate_model(base_model = basemodel).to(device)
 
 lr = args.lr
 
@@ -217,20 +197,26 @@ optimizer = torch.optim.Adam(
     model.parameters(),
     lr=lr)
 
-criterion = torch.nn.CrossEntropyLoss()
+criterion = xent()
 
 if args.train:
+    if args.simclr:
+        train_simclr(model, optimizer, train_loader, valid_loader, pretrained_model_file, epochs = args.epochs)
+        model.load_state_dict(torch.load(pretrained_model_file))
+        model = generate_model(base_model = model).to(device)
+        for name, param in model.named_parameters():
+            if 'base_model' in name:
+                param.requires_grad = False
+        optimizer = torch.optim.Adam(
+                        filter(lambda p: p.requires_grad, model.parameters()),
+                        lr=lr)
     train(model, criterion, optimizer, train_loader, valid_loader, epochs = args.epochs)
 
 model.load_state_dict(torch.load(model_file))
 loss_ = evaluate(model, criterion, test_loader)
 print(f'test loss is {loss_.item()}')
 
-train_accuracy = accuracy(model, train_loader)
-print(f'training accuracy: {train_accuracy}')
-
-valid_accuracy = accuracy(model, valid_loader)
-print(f'validing accuracy: {valid_accuracy}')
-
 test_accuracy = accuracy(model, test_loader)
-print(f'testing accuracy: {train_accuracy}')
+print(f'testing accuracy: {test_accuracy}')
+
+test_evaluate(model, criterion, test_loader)
